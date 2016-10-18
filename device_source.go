@@ -12,7 +12,8 @@ import (
 )
 
 var (
-	tickPath = data.MustCompilePath("tick")
+	tickPath   = data.MustCompilePath("tick")
+	foramtPath = data.MustCompilePath("format")
 )
 
 // NewDeviceSource returns audio source from default device.
@@ -26,16 +27,35 @@ func NewDeviceSource(ctx *core.Context, ioParams *bql.IOParams, params data.Map)
 		}
 		tick = int(itick)
 	}
+	format := "wav"
+	if f, err := params.Get(foramtPath); err == nil {
+		if format, err = data.AsString(f); err != nil {
+			return nil, err
+		}
+	}
+	var gen func([]byte) ([]byte, error)
+	switch format {
+	case "wav":
+		gen = wavFormat
+	case "aiff":
+		gen = aiffFormat
+	default:
+		return nil, fmt.Errorf("'%v' is not supported", format)
+	}
 
 	return &device{
-		tick: tick,
-		stop: make(chan struct{}),
+		tick:   tick,
+		format: format,
+		gen:    gen,
+		stop:   make(chan struct{}),
 	}, nil
 }
 
 type device struct {
-	tick int
-	stop chan struct{}
+	tick   int
+	format string
+	gen    func([]byte) ([]byte, error)
+	stop   chan struct{}
 }
 
 func (d *device) GenerateStream(ctx *core.Context, w core.Writer) error {
@@ -70,14 +90,14 @@ func (d *device) GenerateStream(ctx *core.Context, w core.Writer) error {
 
 		select {
 		case <-ticker.C:
-			audio, err := soundStyle(b.Bytes())
+			audio, err := d.gen(b.Bytes())
 			if err != nil {
 				return err
 			}
 
 			da := data.Map{
-				"type": data.String("AIFF"),
-				"data": data.Blob(audio),
+				"format": data.String(d.format),
+				"data":   data.Blob(audio),
 			}
 			tu := core.NewTuple(da)
 			if err := w.Write(ctx, tu); err != nil {
@@ -91,34 +111,6 @@ func (d *device) GenerateStream(ctx *core.Context, w core.Writer) error {
 		}
 	}
 	return nil
-}
-
-func soundStyle(in []byte) ([]byte, error) {
-	// below setup, skip errors when write to buffer
-	b := bytes.NewBuffer([]byte{})
-	nSamples := len(in)
-	totalBytes := 4 + 8 + 18 + 8 + 8 + 4*nSamples
-
-	b.WriteString("FORM")
-	binary.Write(b, binary.BigEndian, int32(totalBytes)) // total bytes
-	b.WriteString("AIFF")
-
-	// common chunk
-	b.WriteString("COMM")
-	binary.Write(b, binary.BigEndian, int32(18))              // size
-	binary.Write(b, binary.BigEndian, int16(1))               // channels
-	binary.Write(b, binary.BigEndian, int32(nSamples))        // number of samples
-	binary.Write(b, binary.BigEndian, int16(32))              // bits per simple
-	b.Write([]byte{0x40, 0x0e, 0xac, 0x44, 0, 0, 0, 0, 0, 0}) // 80-bit sample rate 4410
-
-	// sound chunk
-	b.WriteString("SSND")
-	binary.Write(b, binary.BigEndian, int32(4*nSamples+8)) // size
-	binary.Write(b, binary.BigEndian, int32(0))            // offset
-	binary.Write(b, binary.BigEndian, int32(0))            // block
-
-	binary.Write(b, binary.BigEndian, in)
-	return b.Bytes(), nil
 }
 
 func (d *device) Stop(ctx *core.Context) error {
