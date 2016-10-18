@@ -5,14 +5,29 @@ import (
 	"encoding/binary"
 )
 
+// aiffFormat convert "in" binary to AIFF format style.
+// Skip error in writing to buffer
 func aiffFormat(in []byte) ([]byte, error) {
-	// below setup, skip errors when write to buffer
+	// ckID            4  "FORM"
+	// ckSize          4  =total size
+	// formType        4  "AIFF"
+	// chID            4  "COMM"
+	// ckSize          4  18
+	// numChannels     2  1 (default device is set as 1)
+	// numSampleFrames 4  88200(=44.1kHz * 2(16bit) * 1(monaural))
+	// sampleSize      2  16
+	// sampleRate      10 44100
+	// ckID            4  "SSND"
+	// ckSize          4
+	// offset          4  0
+	// blockSize       4  0
+	// soundData          =in
 	b := bytes.NewBuffer([]byte{})
 	nSamples := len(in)
-	totalBytes := 4 + 8 + 18 + 8 + 8 + 4*nSamples
+	totalBytes := (4 + 4) + (4 + 18) + (4 + 12 + nSamples)
 
 	b.WriteString("FORM")
-	binary.Write(b, binary.BigEndian, int32(totalBytes)) // total bytes
+	binary.Write(b, binary.BigEndian, int32(totalBytes-8)) // total bytes
 	b.WriteString("AIFF")
 
 	// common chunk
@@ -25,9 +40,9 @@ func aiffFormat(in []byte) ([]byte, error) {
 
 	// sound chunk
 	b.WriteString("SSND")
-	binary.Write(b, binary.BigEndian, int32(4*nSamples+8)) // size
-	binary.Write(b, binary.BigEndian, int32(0))            // offset
-	binary.Write(b, binary.BigEndian, int32(0))            // block
+	binary.Write(b, binary.BigEndian, int32(nSamples)) // size
+	binary.Write(b, binary.BigEndian, int32(0))        // offset
+	binary.Write(b, binary.BigEndian, int32(0))        // block
 
 	binary.Write(b, binary.BigEndian, in)
 	return b.Bytes(), nil
