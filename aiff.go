@@ -27,7 +27,7 @@ func aiffFormat(in []byte) ([]byte, error) {
 	totalBytes := (4 + 4) + (4 + 18) + (4 + 12 + nSamples)
 
 	b.WriteString("FORM")
-	binary.Write(b, binary.BigEndian, int32(totalBytes-8)) // total bytes
+	binary.Write(b, binary.BigEndian, int32(totalBytes)) // total bytes
 	b.WriteString("AIFF")
 
 	// common chunk
@@ -36,13 +36,13 @@ func aiffFormat(in []byte) ([]byte, error) {
 	binary.Write(b, binary.BigEndian, int16(1))               // channels
 	binary.Write(b, binary.BigEndian, int32(nSamples))        // number of samples
 	binary.Write(b, binary.BigEndian, int16(32))              // bits per simple
-	b.Write([]byte{0x40, 0x0e, 0xac, 0x44, 0, 0, 0, 0, 0, 0}) // 80-bit sample rate 4410
+	b.Write([]byte{0x40, 0x0e, 0xac, 0x44, 0, 0, 0, 0, 0, 0}) // 80-bit sample rate 44100
 
 	// sound chunk
 	b.WriteString("SSND")
-	binary.Write(b, binary.BigEndian, int32(nSamples)) // size
-	binary.Write(b, binary.BigEndian, int32(0))        // offset
-	binary.Write(b, binary.BigEndian, int32(0))        // block
+	binary.Write(b, binary.BigEndian, int32(nSamples+8)) // size
+	binary.Write(b, binary.BigEndian, int32(0))          // offset
+	binary.Write(b, binary.BigEndian, int32(0))          // block
 
 	binary.Write(b, binary.BigEndian, in)
 	return b.Bytes(), nil
